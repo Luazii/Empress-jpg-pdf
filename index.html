@@ -37,6 +37,16 @@
     .bar { height:100%; width:0%; background:linear-gradient(90deg,#3b82f6,#22d3ee); transition: width .2s ease; }
 
     .muted { color: var(--muted); font-size:12px; }
+    
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+      .controls {
+        grid-template-columns: 1fr;
+      }
+      .control {
+        grid-column: span 1 !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -46,7 +56,7 @@
       <p>Load one or more images (JPG/PNG). Reorder them. Choose page settings. Then export to a single PDF — all in your browser.</p>
 
       <div class="controls">
-        <div class="control" style="grid-column: span 3;">
+        <div class="control" style="grid-column: span 2;">
           <label>Choose images</label>
           <input id="fileInput" type="file" accept="image/*" multiple />
         </div>
@@ -64,6 +74,13 @@
             <option value="auto">Auto per page</option>
             <option value="p">Portrait</option>
             <option value="l">Landscape</option>
+          </select>
+        </div>
+        <div class="control">
+          <label>Scaling mode</label>
+          <select id="scalingMode">
+            <option value="fit">Fit Page (no crop)</option>
+            <option value="fill">Fill Page (may crop)</option>
           </select>
         </div>
         <div class="control">
@@ -106,6 +123,7 @@
     const dropzone = document.getElementById('dropzone');
     const pageSizeSel = document.getElementById('pageSize');
     const orientationSel = document.getElementById('orientation');
+    const scalingModeSel = document.getElementById('scalingMode');
     const marginMmInput = document.getElementById('marginMm');
     const bar = document.getElementById('bar');
     const progress = document.getElementById('progress');
@@ -211,6 +229,7 @@
       const marginPt = mmToPt(Number(marginMmInput.value || 0));
       const chosenSize = pageSizeSel.value; // 'a4' | 'letter' | 'auto'
       const chosenOrientation = orientationSel.value; // 'auto' | 'p' | 'l'
+      const scalingMode = scalingModeSel.value; // 'fit' | 'fill'
 
       // helper: create doc with size/orientation
       function createDocFor(first){
@@ -258,14 +277,34 @@
         // Draw to an offscreen canvas to control size & quality
         const img = await loadImage(it.dataUrl);
 
-        // scale preserving aspect
-        let drawW = img.naturalWidth, drawH = img.naturalHeight;
-        const scale = Math.min(maxW/(drawW*72/96), maxH/(drawH*72/96));
-        const targetWpx = Math.max(1, Math.floor(drawW * scale * 96/72));
-        const targetHpx = Math.max(1, Math.floor(drawH * scale * 96/72));
+        // Calculate scaling based on selected mode
+        let drawW, drawH, x, y;
+        
+        if (scalingMode === 'fit') {
+          // Scale proportionally to fit page (no crop)
+          const ratio = Math.min(maxW/(img.naturalWidth*72/96), maxH/(img.naturalHeight*72/96));
+          drawW = img.naturalWidth * ratio * 72/96;
+          drawH = img.naturalHeight * ratio * 72/96;
+          
+          // Center the image
+          x = (pageW - drawW) / 2;
+          y = (pageH - drawH) / 2;
+        } else { // 'fill' mode
+          // Scale proportionally to fill page (may crop)
+          const ratio = Math.max(maxW/(img.naturalWidth*72/96), maxH/(img.naturalHeight*72/96));
+          drawW = img.naturalWidth * ratio * 72/96;
+          drawH = img.naturalHeight * ratio * 72/96;
+          
+          // Center the image
+          x = (pageW - drawW) / 2;
+          y = (pageH - drawH) / 2;
+        }
 
-        // downscale very large images to keep memory in check
+        // Draw image on canvas with appropriate dimensions
         const canvas = document.createElement('canvas');
+        const targetWpx = Math.max(1, Math.floor(drawW * 96/72));
+        const targetHpx = Math.max(1, Math.floor(drawH * 96/72));
+        
         canvas.width = targetWpx;
         canvas.height = targetHpx;
         const ctx = canvas.getContext('2d');
@@ -273,13 +312,7 @@
         ctx.drawImage(img, 0, 0, targetWpx, targetHpx);
 
         const jpegUrl = canvas.toDataURL('image/jpeg', 0.92);
-        const pxToPt = 72/96;
-        const finalWpt = targetWpx * pxToPt;
-        const finalHpt = targetHpx * pxToPt;
-        const x = (pageW - finalWpt)/2;
-        const y = (pageH - finalHpt)/2;
-
-        doc.addImage(jpegUrl, 'JPEG', x, y, finalWpt, finalHpt, undefined, 'FAST');
+        doc.addImage(jpegUrl, 'JPEG', x, y, drawW, drawH, undefined, 'FAST');
 
         bar.style.width = ((idx+1)/state.items.length*100).toFixed(1)+'%';
         await new Promise(r=>setTimeout(r, 0)); // yield to UI
