@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Empress JPG → PDF Converter</title>
+  <style>
+    :root { --bg:#0b1220; --card:#121a2b; --muted:#9fb0d1; --accent:#6aa9ff; }
+    html,body { height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Inter,Arial; background:var(--bg); color:#e6eefc; }
+    .wrap { max-width: 1000px; margin: 24px auto; padding: 16px; }
+    .card { background:var(--card); border:1px solid rgba(255,255,255,.08); border-radius:16px; padding: 16px; box-shadow: 0 6px 30px rgba(0,0,0,.25); }
+    h1 { font-size: 20px; margin: 0 0 6px; }
+    p { color: var(--muted); margin: 6px 0 16px; }
+    .controls { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap:12px; align-items: end; }
+    .control { display:flex; flex-direction:column; gap:6px; }
+    label { font-size: 12px; color:#c8d6ef; }
+    input[type="file"], select, button, input[type="number"] { 
+      background:#0c1426; color:#e6eefc; border:1px solid rgba(255,255,255,.1); border-radius:10px; padding:10px 12px; 
+    }
+    button { cursor:pointer; font-weight:600; }
+    button.primary { background: linear-gradient(135deg, #3b82f6, #06b6d4); border:none; }
+    button[disabled] { opacity:.6; cursor:not-allowed; }
+
+    .dropzone { border:2px dashed rgba(255,255,255,.15); border-radius:14px; padding:16px; text-align:center; color:var(--muted); }
+    .thumbs { display:grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap:12px; margin-top:12px; }
+    .thumb { position:relative; border:1px solid rgba(255,255,255,.1); border-radius:12px; overflow:hidden; background:#0c1426; }
+    .thumb img { width:100%; height:120px; object-fit:cover; display:block; }
+    .thumb .meta { display:flex; align-items:center; justify-content:space-between; padding:8px; gap:6px; font-size:12px; color:#c8d6ef; }
+    .thumb .actions { display:flex; gap:6px; }
+    .thumb button { padding:6px 8px; font-size:12px; }
+    .drag-hint { position:absolute; inset:0; display:none; }
+    .thumb.dragover .drag-hint { display:block; outline:3px dashed var(--accent); outline-offset:-6px; }
+
+    .footer { display:flex; gap:12px; justify-content:flex-end; margin-top:16px; }
+
+    .progress { height:10px; background:#0c1426; border:1px solid rgba(255,255,255,.1); border-radius:999px; overflow:hidden; }
+    .bar { height:100%; width:0%; background:linear-gradient(90deg,#3b82f6,#22d3ee); transition: width .2s ease; }
+
+    .muted { color: var(--muted); font-size:12px; }
+    
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+      .controls {
+        grid-template-columns: 1fr;
+      }
+      .control {
+        grid-column: span 1 !important;
+      }
+    }
+  </style>
+</head>
+<body>
+     <!-- Navigation Bar -->
+  <nav class="navbar">
+    <div class="nav-container">
+      <a href="index.html" class="nav-logo">
+        <span>Empress</span> Converter Suite
+      </a>
+      
+      <button class="mobile-menu-btn" id="mobileMenuBtn">☰</button>
+      
+      <ul class="nav-menu" id="navMenu">
+        <li class="nav-item">
+          <a href="index.html" class="nav-link">Home</a>
+        </li>
+        <li class="nav-item">
+          <a href="jpg2pdf.html" class="nav-link">JPG to PDF</a>
+        </li>
+        <li class="nav-item">
+          <a href="pdf2jpg.html" class="nav-link active">PDF to JPG</a>
+        </li>
+      </ul>
+    </div>
+  </nav>
+  <div class="wrap">
+    <div class="card">
+      <h1> Empress JPG → PDF Converter </h1>
+      <p>Load one or more images (JPG/PNG). Reorder them. Choose page settings. Then export to a single PDF — all in your browser.</p>
+
+      <div class="controls">
+        <div class="control" style="grid-column: span 2;">
+          <label>Choose images</label>
+          <input id="fileInput" type="file" accept="image/*" multiple />
+        </div>
+        <div class="control">
+          <label>Page size</label>
+          <select id="pageSize">
+            <option value="a4">A4 (210×297 mm)</option>
+            <option value="letter">US Letter</option>
+            <option value="auto">Auto (fit to first image)</option>
+          </select>
+        </div>
+        <div class="control">
+          <label>Orientation</label>
+          <select id="orientation">
+            <option value="auto">Auto per page</option>
+            <option value="p">Portrait</option>
+            <option value="l">Landscape</option>
+          </select>
+        </div>
+        <div class="control">
+          <label>Scaling mode</label>
+          <select id="scalingMode">
+            <option value="fit">Fit Page (no crop)</option>
+            <option value="fill">Fill Page (may crop)</option>
+          </select>
+        </div>
+        <div class="control">
+          <label>Margins (mm)</label>
+          <input id="marginMm" type="number" min="0" max="40" step="1" value="10" />
+        </div>
+        <div class="control">
+          <button id="clearBtn" type="button">Clear</button>
+        </div>
+        <div class="control">
+          <button id="exportBtn" class="primary" type="button" disabled>Convert → PDF</button>
+        </div>
+      </div>
+
+      <div id="dropzone" class="dropzone" style="margin-top:12px;">
+        Drag & drop images here (or use the file picker above)
+      </div>
+
+      <div id="thumbs" class="thumbs" aria-live="polite"></div>
+
+      <div class="footer">
+        <div class="progress" style="flex:1; display:none;" id="progress">
+          <div class="bar" id="bar"></div>
+        </div>
+        <span class="muted" id="hint">Tip: you can drag to reorder pages.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- jsPDF (client-side PDF creation) -->
+  <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+  <script>
+    // State
+    const state = { items: [] }; // { id, file, name, dataUrl, w, h }
+    const fileInput = document.getElementById('fileInput');
+    const thumbs = document.getElementById('thumbs');
+    const exportBtn = document.getElementById('exportBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const dropzone = document.getElementById('dropzone');
+    const pageSizeSel = document.getElementById('pageSize');
+    const orientationSel = document.getElementById('orientation');
+    const scalingModeSel = document.getElementById('scalingMode');
+    const marginMmInput = document.getElementById('marginMm');
+    const bar = document.getElementById('bar');
+    const progress = document.getElementById('progress');
+
+    // Helpers
+    const uid = () => Math.random().toString(36).slice(2,9);
+
+    function mmToPt(mm){ return mm * 72 / 25.4; }
+
+    function readFileAsDataURL(file){
+      return new Promise((resolve,reject)=>{
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.onerror = reject;
+        fr.readAsDataURL(file);
+      });
+    }
+
+    function loadImage(url){
+      return new Promise((resolve,reject)=>{
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = url;
+      });
+    }
+
+    async function addFiles(files){
+      const arr = Array.from(files || []);
+      for (const f of arr){
+        if(!f.type.startsWith('image/')) continue;
+        const dataUrl = await readFileAsDataURL(f);
+        const img = await loadImage(dataUrl);
+        state.items.push({ id: uid(), file:f, name:f.name, dataUrl, w: img.naturalWidth, h: img.naturalHeight });
+      }
+      render();
+    }
+
+    function render(){
+      thumbs.innerHTML='';
+      state.items.forEach((it,idx)=>{
+        const el = document.createElement('div');
+        el.className='thumb';
+        el.draggable = true;
+        el.dataset.index = idx;
+        el.innerHTML = `
+          <div class="drag-hint"></div>
+          <img src="${it.dataUrl}" alt="${it.name}" />
+          <div class="meta">
+            <span title="${it.name}">${idx+1}. ${it.name.length>16? it.name.slice(0,14)+'…': it.name}</span>
+            <div class="actions">
+              <button type="button" data-act="up">↑</button>
+              <button type="button" data-act="down">↓</button>
+              <button type="button" data-act="del" title="Remove">✕</button>
+            </div>
+          </div>`;
+        // button actions
+        el.querySelectorAll('button').forEach(btn=>{
+          btn.addEventListener('click', ev => {
+            const act = ev.currentTarget.dataset.act;
+            const i = Number(el.dataset.index);
+            if(act==='up' && i>0){
+              [state.items[i-1], state.items[i]] = [state.items[i], state.items[i-1]];
+              render();
+            }
+            if(act==='down' && i<state.items.length-1){
+              [state.items[i+1], state.items[i]] = [state.items[i], state.items[i+1]];
+              render();
+            }
+            if(act==='del'){
+              state.items.splice(i,1); render();
+            }
+          });
+        });
+        // drag reorder
+        el.addEventListener('dragstart', e=>{
+          e.dataTransfer.setData('text/plain', el.dataset.index);
+        });
+        el.addEventListener('dragover', e=>{ e.preventDefault(); el.classList.add('dragover'); });
+        el.addEventListener('dragleave', ()=> el.classList.remove('dragover'));
+        el.addEventListener('drop', e=>{
+          e.preventDefault(); el.classList.remove('dragover');
+          const from = Number(e.dataTransfer.getData('text/plain'));
+          const to = Number(el.dataset.index);
+          if(from===to) return;
+          const [moved] = state.items.splice(from,1);
+          state.items.splice(to,0,moved);
+          render();
+        });
+        thumbs.appendChild(el);
+      });
+      exportBtn.disabled = state.items.length===0;
+    }
+
+    // Export logic
+    async function exportPDF(){
+      if(state.items.length===0) return;
+      progress.style.display = 'block';
+      bar.style.width = '0%';
+
+      const { jsPDF } = window.jspdf;
+
+      const marginPt = mmToPt(Number(marginMmInput.value || 0));
+      const chosenSize = pageSizeSel.value; // 'a4' | 'letter' | 'auto'
+      const chosenOrientation = orientationSel.value; // 'auto' | 'p' | 'l'
+      const scalingMode = scalingModeSel.value; // 'fit' | 'fill'
+
+      // helper: create doc with size/orientation
+      function createDocFor(first){
+        if(chosenSize==='auto'){
+          // Make the page size match the first image aspect, using 96 dpi heuristic
+          const dpi = 96; // browser heuristic
+          const wPt = first.w * 72 / dpi;
+          const hPt = first.h * 72 / dpi;
+          const orient = (chosenOrientation==='auto')
+            ? (wPt>hPt? 'l' : 'p')
+            : (chosenOrientation==='p'? 'p':'l');
+          return new jsPDF({ unit:'pt', format: [wPt, hPt], orientation: orient });
+        } else {
+          const orient = (chosenOrientation==='auto')
+            ? (first.w>first.h? 'l' : 'p')
+            : (chosenOrientation==='p'? 'p':'l');
+          return new jsPDF({ unit:'pt', format: chosenSize, orientation: orient });
+        }
+      }
+
+      const first = state.items[0];
+      const doc = createDocFor(first);
+
+      for(let idx=0; idx<state.items.length; idx++){
+        const it = state.items[idx];
+
+        if(idx>0){
+          // add a new page with auto orientation if needed
+          if(chosenSize==='auto'){
+            const dpi=96; const wPt=it.w*72/dpi; const hPt=it.h*72/dpi;
+            const orient = (chosenOrientation==='auto') ? (wPt>hPt? 'l':'p') : (chosenOrientation==='p'? 'p':'l');
+            doc.addPage([wPt, hPt], orient);
+          } else {
+            const orient = (chosenOrientation==='auto') ? (it.w>it.h? 'l':'p') : (chosenOrientation==='p'? 'p':'l');
+            doc.addPage(chosenSize, orient);
+          }
+        }
+
+        // page size in points
+        const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
+        const maxW = pageW - marginPt*2;
+        const maxH = pageH - marginPt*2;
+
+        // Draw to an offscreen canvas to control size & quality
+        const img = await loadImage(it.dataUrl);
+
+        // Calculate scaling based on selected mode
+        let drawW, drawH, x, y;
+        
+        if (scalingMode === 'fit') {
+          // Scale proportionally to fit page (no crop)
+          const ratio = Math.min(maxW/(img.naturalWidth*72/96), maxH/(img.naturalHeight*72/96));
+          drawW = img.naturalWidth * ratio * 72/96;
+          drawH = img.naturalHeight * ratio * 72/96;
+          
+          // Center the image
+          x = (pageW - drawW) / 2;
+          y = (pageH - drawH) / 2;
+        } else { // 'fill' mode
+          // Scale proportionally to fill page (may crop)
+          const ratio = Math.max(maxW/(img.naturalWidth*72/96), maxH/(img.naturalHeight*72/96));
+          drawW = img.naturalWidth * ratio * 72/96;
+          drawH = img.naturalHeight * ratio * 72/96;
+          
+          // Center the image
+          x = (pageW - drawW) / 2;
+          y = (pageH - drawH) / 2;
+        }
+
+        // Draw image on canvas with appropriate dimensions
+        const canvas = document.createElement('canvas');
+        const targetWpx = Math.max(1, Math.floor(drawW * 96/72));
+        const targetHpx = Math.max(1, Math.floor(drawH * 96/72));
+        
+        canvas.width = targetWpx;
+        canvas.height = targetHpx;
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, targetWpx, targetHpx);
+
+        const jpegUrl = canvas.toDataURL('image/jpeg', 0.92);
+        doc.addImage(jpegUrl, 'JPEG', x, y, drawW, drawH, undefined, 'FAST');
+
+        bar.style.width = ((idx+1)/state.items.length*100).toFixed(1)+'%';
+        await new Promise(r=>setTimeout(r, 0)); // yield to UI
+      }
+
+      doc.save('images.pdf');
+      progress.style.display='none';
+      bar.style.width='0%';
+    }
+
+    // Events
+    fileInput.addEventListener('change', e=> addFiles(e.target.files));
+
+    clearBtn.addEventListener('click', ()=>{ state.items.length=0; render(); });
+
+    exportBtn.addEventListener('click', exportPDF);
+
+    // Drag & drop support
+    ;['dragenter','dragover'].forEach(evt=>{
+      dropzone.addEventListener(evt, e=>{ e.preventDefault(); dropzone.style.background='#0f1930'; });
+    });
+    ;['dragleave','drop'].forEach(evt=>{
+      dropzone.addEventListener(evt, e=>{ e.preventDefault(); dropzone.style.background=''; });
+    });
+    dropzone.addEventListener('drop', e=>{
+      const dt = e.dataTransfer; if(!dt) return; addFiles(dt.files);
+    });
+
+    // Accessibility: paste image from clipboard
+    window.addEventListener('paste', e=>{
+      const items = e.clipboardData?.items || [];
+      const files = [];
+      for(const it of items){ if(it.kind==='file'){ files.push(it.getAsFile()); } }
+      if(files.length) addFiles(files);
+    });
+    
+    // Mobile menu functionality
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    const navMenu = document.getElementById('navMenu');
+    
+    mobileMenuBtn.addEventListener('click', () => {
+      navMenu.classList.toggle('active');
+    });
+    
+    // Close mobile menu when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.nav-container') && navMenu.classList.contains('active')) {
+        navMenu.classList.remove('active');
+      }
+    });
+    
+    // Update active link based on current page
+    document.addEventListener('DOMContentLoaded', () => {
+      const currentPage = window.location.pathname.split('/').pop() || 'index.html';
+      const links = document.querySelectorAll('.nav-link');
+      
+      links.forEach(link => {
+        const linkPage = link.getAttribute('href');
+        if (linkPage === currentPage) {
+          link.classList.add('active');
+        } else {
+          link.classList.remove('active');
+        }
+      });
+    });
+ 
+  </script>
+
+  <footer class="wrap" style="opacity:.8;">
+    <p class="muted">
+      Notes: Works fully offline after load. HEIC/HEIF may not be supported in some browsers. If quality/size is too large, increase margins or choose a fixed page size instead of Auto.
+    </p>
+  </footer>
+</body>
+</html>
